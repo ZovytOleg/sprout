@@ -12,8 +12,6 @@
 
 namespace App\Telegram;
 
-use App\Models\User;
-use DefStudio\Telegraph\Facades\Telegraph;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
 use DefStudio\Telegraph\Keyboard\Keyboard;
@@ -32,10 +30,9 @@ class Handler extends WebhookHandler
             ->keyboard(
                 Keyboard::make()->buttons([
                     Button::make('📚 Учень')->action('status')->param('status', 'pupil'),
-                    Button::make('🎓 Учитель')->action('teacher'),
+                    Button::make('🎓 Учитель')->action('status')->param('status', 'teacher'),
                     Button::make('💼 Адміністрація')->action('admin'),
                     Button::make('👨‍👩‍👧‍👦 Батьки')->action('family'),
-                    Button::make('😎 Гість')->action('guest'),
                 ])
             )->send();
     }
@@ -45,47 +42,30 @@ class Handler extends WebhookHandler
 
         if ($status == 'pupil'){
             $this->chat->message("Напиши свою учнівську електронну адресу, щоб я розумів, з ким спілкуюсь")->send();
-
-/*            $attemps = 3;
-            for ($i = 0; $i < $attemps; $i++) {
-                if ($this->message->text() == 'pupil@gal'){
-                    $this->reply('tak');
-                } else {
-                    $this->reply('ni');
-                    $attemps++;
-                }
-            }*/
-
-/*            $this->chat->message("Оберіть свій клас, щоб отримувати оголошення, сповіщення та іншу важливу інформацію.")
-                ->keyboard(
-                    Keyboard::make()->buttons([
-                        Button::make('5-9 клас')->action('login'),
-                        Button::make('10-11 клас')->action('login'),
-                    ])
-                )->send();*/
         }
-
+        if ($status == 'teacher'){
+            $this->chat->message("Напишіть свою корпоративну електронну адресу, щоб я розумів, з ким спілкуюсь")->send();
+        }
     }
 
     public function handleChatMessage(Stringable|\Illuminate\Support\Stringable $text): void
     {
         switch (true) {
-            case strpos($text, 'pupil'):
+            case str_contains($text, 'pupil') AND str_contains($text, '@galeshchynalitsey.ukr.education'):
                 $this->login('pupil');
                 break;
-            case strpos($text, '@galeshchynalitsey.ukr.education'):
+            case str_contains($text, '@galeshchynalitsey.ukr.education'):
                 $this->login('teacher');
                 break;
-            case strpos($text, '@gmail.com'):
-                $this->chat->message("Особиста")->send();
+            case str_contains($text, '@gmail.com'):
+                $this->chat->message("Я працюю лише зі шкільною електронною адресою")->send();
                 break;
         }
     }
 
-
     public function login($status): void
     {
-        switch (true) {
+        switch ($status) {
             case 'pupil':
                 $this->chat->message("Учень")->send();
                 break;
