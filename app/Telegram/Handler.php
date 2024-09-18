@@ -15,6 +15,7 @@ namespace App\Telegram;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
 use DefStudio\Telegraph\Keyboard\Keyboard;
+use Illuminate\Support\Facades\Storage;
 
 class Handler extends WebhookHandler
 {
@@ -36,6 +37,32 @@ class Handler extends WebhookHandler
                 ])
             )->send();
     }
+
+    public function menu(): void
+    {
+        $this->chat->message("Яку актуальну інформацію ти хочеш отримати?")
+            ->keyboard(
+                Keyboard::make()->buttons([
+                    Button::make('📚 Розклад уроків')->action('schedule')->param('type', 'lessons'),
+                    Button::make('📋 Графік навчання')->action('schedule')->param('type', 'study'),
+                    Button::make('🍽 Меню')->action('schedule')->param('type', 'dinner'),
+                    Button::make('🚌 Розклад руху автобусів')->action('schedule')->param('type', 'bus'),
+                ])
+            )->send();
+    }
+
+    public function schedule():void
+    {
+        $schedule = $this->data->get('type');
+
+        if ($schedule == 'lessons') {
+/*            $json = Storage::disk('local')->get('schedule_lessons.json');
+            $json = json_decode($json, true);
+            dd($json);*/
+            $this->chat->message("Сталий розклад на I навчальний семестр.")->photo(Storage::path('\public\data\images\schedule_lessons.jpg'))->send();
+        }
+    }
+
     public function status(): void
     {
         $status = $this->data->get('status');
@@ -52,7 +79,7 @@ class Handler extends WebhookHandler
     {
         switch (true) {
             case str_contains($text, 'pupil') AND str_contains($text, '@galeshchynalitsey.ukr.education'):
-                $this->login('pupil');
+                $this->login($text,'pupil');
                 break;
             case str_contains($text, '@galeshchynalitsey.ukr.education'):
                 $this->login('teacher');
@@ -63,11 +90,15 @@ class Handler extends WebhookHandler
         }
     }
 
-    public function login($status): void
+    public function login($text, $status): void
     {
         switch ($status) {
             case 'pupil':
-                $this->chat->message("Учень")->send();
+                if ($text == 'pupil34@galeshchynalitsey.ukr.education'){
+                    $this->chat->message("Доступ отримано")->send();
+                }else{
+                    $this->chat->message("Вашу ел.адресу не знайдено. Спробуйте ще раз!")->send();
+                }
                 break;
             case 'teacher':
                 $this->chat->message("Учитель")->send();
