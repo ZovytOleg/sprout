@@ -12,12 +12,14 @@
 
 namespace App\Telegram;
 
+use DateTime;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
 use DefStudio\Telegraph\Keyboard\Keyboard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Random\RandomException;
 
 class Handler extends WebhookHandler
 {
@@ -47,10 +49,11 @@ class Handler extends WebhookHandler
                 '📚 Розклад уроків' => 'lessons',
                 '📋 Графік навчання' => 'study',
                 '🍽 Меню' => 'dinner',
+                '⚠️ Статус тривоги' => 'alert',
                 '🚌 Розклад руху автобусів' => 'bus'
             ),
             'teachers' => array(
-                '👤 Чергування' => 'alternation',
+                '👤 Чергування' => 'duty',
             ),
         );
 
@@ -69,6 +72,9 @@ class Handler extends WebhookHandler
             ->keyboard(Keyboard::make()->buttons($buttons))->send();
     }
 
+    /**
+     * @throws RandomException
+     */
     public function schedule():void
     {
         $schedule = $this->data->get('type');
@@ -79,81 +85,277 @@ class Handler extends WebhookHandler
                     ->photo(Storage::path('\public\data\images\schedule_lessons.jpg'))
                     ->send();
                 break;
+
             case 'study':
                 $this->chat->message("Який період навчання тебе цікавить?")
                     ->keyboard(
                         Keyboard::make()->buttons([
-                            Button::make('🌜 І семестр')->action('periodStudy')->param('period', 'first'),
-                            Button::make('🌛 ІІ семестр')->action('periodStudy')->param('period', 'second'),
-                            Button::make('🌝 Разом')->action('periodStudy')->param('period', 'both'),
+                            Button::make('🌜 І семестр')->action('scheduleStudy')->param('period', 'first'),
+                            Button::make('🌛 ІІ семестр')->action('scheduleStudy')->param('period', 'second')
                         ])
                     )->send();
+
                 break;
+
             case 'bus':
-                $imgCount = count(glob(Storage::path("\public\data\images\schedule-bus\*.jpg")));
+                $this->chat->message("Обери маршрут, який тебе цікавить")
+                    ->keyboard(
+                        Keyboard::make()->buttons([
+                            Button::make('📍 №1 (Школа - Солониця - Сохинівка)')->action('scheduleBus')->param('route', '1'),
+                            Button::make('📍 №2 (Школа - Заруддя - Ревівка)')->action('scheduleBus')->param('route', '2'),
+                            Button::make('📍 №3 (Школа - Трудовик - Горбані)')->action('scheduleBus')->param('route', '3'),
+                            Button::make('📍 №4 (Школа - Геологія - Геологічна)')->action('scheduleBus')->param('route', '4'),
+                            Button::make('📍 №5 (Школа - Машзавод)')->action('scheduleBus')->param('route', '5')                        ])
+                    )->send();
 
-/*                $images = [];
-                for($i = 1; $i < $imgCount; $i++){
+                break;
 
-                }*/
-                $this->chat->message("Сталий розклад руху автобусів на I навчальний семестр.")
-                    ->mediaGroup([
-                        [
-                            'type' => 'photo',
-                            'media' => 'https://cdn.motor1.com/images/mgl/P3nO74/s1/2000-nissan-skyline-r34-gt-r-by-kaizo-industries-driven-by-paul-walker-in-fast-and-furious-bonham-s-auction.jpg',
-                        ],
-                        [
-                            'type' => 'photo',
-                            'media' => 'https://cdn.motor1.com/images/mgl/P3nO74/s1/2000-nissan-skyline-r34-gt-r-by-kaizo-industries-driven-by-paul-walker-in-fast-and-furious-bonham-s-auction.jpg',
-                        ]
-                    ])
-                    ->send();
+            case 'alert':
+                function alertStatus()
+                {
+                    $headers = array(
+                        'accept: application/json',
+                        'Authorization: 0469f400:529254bbb50fb701822bb42758595aca'
+                    );
+
+                    $ch = curl_init('https://api.ukrainealarm.com/api/v3/alerts/19');
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch, CURLOPT_HEADER, false);
+
+                    $res = curl_exec($ch);
+                    curl_close($ch);
+
+                    return json_decode($res, true);
+                }
+
+                function messageAlertStatus($data, $chat): void
+                {
+                    $gifsDeactivateAlert = [
+                        'https://media.tenor.com/LoNsnAUGbEwAAAAM/dancing-hedgehog.gif',
+                        'https://media.tenor.com/5VHBPuAZrOIAAAAM/ohyeah-cute.gif',
+                        'https://c.tenor.com/uryKOd89Z3UAAAAd/tenor.gif',
+                        'https://c.tenor.com/r0R0N3dI3kIAAAAd/tenor.gif',
+                        'https://c.tenor.com/o_tU_5zczwcAAAAd/tenor.gif',
+                        'https://c.tenor.com/IRVIVy9sstQAAAAd/tenor.gif',
+                        'https://c.tenor.com/0i9MjAMd6D0AAAAC/tenor.gif',
+                        'https://c.tenor.com/gotOLnyvy4YAAAAC/tenor.gif',
+                        'https://c.tenor.com/y0zptlFKiYIAAAAC/tenor.gif',
+                        'https://c.tenor.com/yaNqkG8o9UcAAAAC/tenor.gif'
+                    ];
+
+                    Log::info($data, (array)JSON_UNESCAPED_UNICODE);
+
+                    if (!empty($data[0]['activeAlerts'])){
+                        $chat->message("❗<strong>В Полтавській області зараз повітряна тривога.\n\nЗалишайся в безпечному місці! </strong>❗️")
+                            ->send();
+                    } else {
+                        $chat->message('🟢 <strong>Повітряної тривоги в Полтавській області немає</strong> 🟢')
+                            ->animation($gifsDeactivateAlert[rand(0, count($gifsDeactivateAlert)-1)])
+                            ->send();
+                    }
+                }
+
+                $data = alertStatus();
+
+                if(empty($data) OR $data == ''){
+                    $attempts = 0;
+
+                    while(empty(alertStatus())) {
+                        $this->chat->message("Статус тривоги в області не вдалося визначити. 😔 \n\nАвтоматичний повторний запит через 5 секунд...⏳")->send();
+
+                        sleep(5);
+                        alertStatus();
+                      Log::info(alertStatus(), (array)JSON_UNESCAPED_UNICODE);
+                      if (!empty(alertStatus())) {
+                          messageAlertStatus($data, $this->chat);
+                      }elseif ($attempts > 9){
+                          $this->chat->message("Відповідь від офіційного сайту з тривогами не було отримано. 😔 \n\nСпробуйте трішки пізніше.")->send();
+
+                          break;
+                      } else {
+                          $attempts++;
+                        }
+
+                    }
+
+                }else{
+                    messageAlertStatus($data, $this->chat);
+                }
+            break;
+
+            case 'duty':
+                $this->chat->message("Графік чергування вчителів та класів по Новогалещинському ліцею на І семестр 2024/2025 н.р.:")
+                    ->keyboard(
+                        Keyboard::make()->buttons([
+                            Button::make('📋 Поточний тиждень')->action('scheduleDuty')->param('type', 'week'),
+                            Button::make('📋 Весь семестр')->action('scheduleDuty')->param('type', 'all'),])
+                    )->send();
+
                 break;
 
         }
     }
 
-    public function periodStudy(): void
+    public function scheduleStudy(): void
     {
         $period = $this->data->get('period');
+
         $data = json_decode(Storage::get('\public\data\schedule_study.json'), true);
-       # Log::info(json_decode(Storage::get('\public\data\schedule_study.json'), JSON_UNESCAPED_UNICODE));
+        $this->chat->message('<strong>'.$data['schedule']['title'].'</strong>')->send();
 
-        $this->chat->message('<strong>'.$data['schedule']["title"].'</strong>')->send();
+        foreach ($data['schedule'][$period] as $typeStudents){
+            $message = '<strong>🔵 '.$typeStudents['title'].' 🔵</strong>'. "\n".
+                "<blockquote>".$typeStudents['classes']."</blockquote>";
 
-/*        $message = '
-                    <strong>'.$data['schedule'][$period]['pair']['title'].'</strong>'. "\n".
-                    $data['schedule'][$period]['pair']['classes']. "\n\n".
-                    $data['schedule'][$period]['pair']['date']['september'][0]
-        ;*/
+            $currentMonthIndex = 0;
+            if (is_array($typeStudents['date'])) {
+                $currentMonth = array_search(date("F"), array_keys($typeStudents['date']));
+
+                foreach ($typeStudents['date'] as $dates) {
+                    if ($currentMonthIndex == $currentMonth) {
+                        $message.= "\n\n<blockquote>";
+                        $message.= "<strong>".current($dates)."</strong>";
+                    }else{
+                        $message.= "\n\n<strong>".current($dates)."</strong>";
+                    }
+
+                    for($i  = 1; $i < count($dates); $i++) {
+                        if ($dates[$i] == date("d.m", strtotime("+1 day"))) {
+                            $message.= '<strong>'.$dates[$i].' (завтра)</strong> , ';
+                        } elseif ($dates[$i] == last($dates)){
+                            $message.= $dates[$i]. ";";
+                        } else{
+                            $message.= $dates[$i]. ', ';
+                        }
+                    }
+
+                    if ($currentMonthIndex == $currentMonth) {
+                        $message.= "</blockquote>";
+                    }
+                    $currentMonthIndex++;
+                }
+                $this->chat->message($message)->send();
+            } else{
+                $this->chat->message($typeStudents['date'])->send();
+
+                break;
+            }
+
+        }
+    }
+
+    public function scheduleBus(): void
+    {
+        $route = $this->data->get('route');
+
+        $data = json_decode(Storage::get('\public\data\schedule_bus.json'), true);
+
+        $route = $data['routes'][$route-1];
+        $message  = "<blockquote><strong>📍🗺️ Маршрут №" . $route['routeNumber'] . "</strong></blockquote>\n";
+        $message .= "<strong>🚌 Модель автобуса: </strong>" . $route['busModel'] . "\n";
+        $message .= "<strong>⭐ Номер: </strong>" . $route['registrationNumber'] . "\n";
+        $message .= "<strong>😎 Водій: </strong>" . $route['driver'] . "\n\n";
+        $this->chat->message($message)->send();
 
         $message = '';
-        /*for ($i = 0; $i < 2; $i++){
-            for ($j = 0; $j < 3; $i++){
-                foreach ($j as $item){
-                    $message.= ;
-                }
+        foreach ($route['stops'] as $stop) {
+            $message .= "<blockquote><strong>📌 Зупинка: </strong>" . $stop['location'] . "</blockquote>\n";
+            $message .= "<strong>🟢 Час прибуття: </strong>" . ($stop['arrivalTime'] ?? '—') . "\n";
+            $message .= "<strong>🔴 Час відправлення: </strong>" . ($stop['departureTime'] ?? '—') . "\n";
+            $message .= "<strong>⏳ Тривалість зупинки (хв): </strong>" . ($stop['stopDurationMinutes'] ?? '—') . "\n\n";
+         }
+
+        $this->chat->message($message)
+            ->keyboard(
+                Keyboard::make()->buttons([
+                    Button::make('↩️ Повернутися')->action('schedule')->param('type', 'bus')
+                ])
+            )->send();
+    }
+
+    /**
+     * @throws \DateMalformedStringException
+     */
+    public function scheduleDuty(): void
+    {
+        $type = $this->data->get('type');
+
+        $data = json_decode(Storage::get('\public\data\schedule_duty.json'), true);
+
+        // Поточна дата і дата через 7 днів
+
+
+// Функція для перевірки, чи дата в межах наступного тижня
+        function isWithinNextWeek($date): bool
+        {
+            $currentDate = new DateTime();
+            $endDate = (clone $currentDate)->modify('+7 days');
+            $checkDate = DateTime::createFromFormat('d.m', $date);
+
+            if($checkDate){
+                $checkDate->setDate($currentDate->format("Y"), $checkDate->format('m'), $checkDate->format('d'));
+
+                return $checkDate >= $currentDate && $checkDate <= $endDate;
+
             }
-        }*/
 
-        foreach ($data['schedule']["first"] as $item){
-            Log::info($item, JSON_UNESCAPED_UNICODE);
+            return false;
+
         }
-       # Log::info($message, JSON_UNESCAPED_UNICODE));
 
-      #  $this->chat->message($message)->send();
+        Log::info(isWithinNextWeek("06.10"), (array)JSON_UNESCAPED_UNICODE);
 
-/*        foreach ($data['schedule'][$period] as $students) {
-            Log::info(json_decode($this->chat->message($students['classes'])->send(), JSON_UNESCAPED_UNICODE));
-            $this->chat->message($students['first']['pair'][$type])->send();
-        }*/
+// Виведення інформації для наступного тижня
+        if ($type == 'week'){
+            $message = '';
+            $filteredDates = [];
 
-       #$this->chat->message($data['schedule']['first']['pair']['classes'])->send();
+            foreach ($data['dutySchedule'] as $duty) {
 
+                foreach ($duty['dates'] as $date) {
+                    if (isWithinNextWeek($date)) {
+                        $filteredDates[] = $date;
 
-    #    Log::info(json_decode(Storage::get('\public\data\schedule_study.json'), JSON_UNESCAPED_UNICODE));
+                        $message .= "Клас: " . $duty['class'] . "\n";
+                        $message .= "Старший черговий: " . $duty['seniorDuty'] . "\n";
+                        $message .= "Чергові на 1 поверсі: " . implode(", ", $duty['firstFloor']) . "\n";
+                        $message .= "Чергові на 2 поверсі: " . implode(", ", $duty['secondFloor']) . "\n";
+                        $message .= "Чергові на 3 поверсі: " . implode(", ", $duty['thirdFloor']) . "\n";
+                        $message .= "Черговий по подвір'ю: " . $duty['yard'] . "\n";
+                        $message .= "----------------------\n";
+                    }
+                }
+
+              # $filteredDates = array_filter($duty['dates'], 'isWithinNextWeek');
+
+/*                if (!empty($filteredDates)) {
+                    $message .= "Дати чергування: " . implode(", ", $filteredDates) . "\n";
+                    foreach ($filteredDates as $date) {
+                        $message .= "Клас: " . $duty['class'] . "\n";
+                        $message .= "Старший черговий: " . $duty['seniorDuty'] . "\n";
+                        $message .= "Чергові на 1 поверсі: " . implode(", ", $duty['firstFloor']) . "\n";
+                        $message .= "Чергові на 2 поверсі: " . implode(", ", $duty['secondFloor']) . "\n";
+                        $message .= "Чергові на 3 поверсі: " . implode(", ", $duty['thirdFloor']) . "\n";
+                        $message .= "Черговий по подвір'ю: " . $duty['yard'] . "\n";
+                        $message .= "----------------------\n";
+                    }
+                }*/
+            }
+            Log::info($filteredDates, (array)JSON_UNESCAPED_UNICODE);
+
+            $this->chat->message($message)
+                ->keyboard(
+                    Keyboard::make()->buttons([
+                        Button::make('↩️ Повернутися')->action('schedule')->param('type', 'duty')
+                    ])
+                )->send();
+        }
+
 
     }
+
 
 
     public function status(): void
