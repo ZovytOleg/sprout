@@ -1,7 +1,6 @@
 <?php
 /**
- * Handler.php
- * php version 7.4.1
+ * Handler.php *  version 7.4.1
  *
  * @category
  * @package  #path
@@ -19,7 +18,7 @@ use DefStudio\Telegraph\Keyboard\Keyboard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Random\RandomException;
+use Stringable;
 
 class Handler extends WebhookHandler
 {
@@ -156,7 +155,6 @@ class Handler extends WebhookHandler
                             ->send();
                     }
                 }
-
                 $data = alertStatus();
 
                 if(empty($data) OR $data == ''){
@@ -164,20 +162,18 @@ class Handler extends WebhookHandler
 
                     while(empty(alertStatus())) {
                         $this->chat->message("Статус тривоги в області не вдалося визначити. 😔 \n\nАвтоматичний повторний запит через 5 секунд...⏳")->send();
-
                         sleep(5);
                         alertStatus();
-                      Log::info(alertStatus(), (array)JSON_UNESCAPED_UNICODE);
-                      if (!empty(alertStatus())) {
-                          messageAlertStatus($data, $this->chat);
-                      }elseif ($attempts > 9){
-                          $this->chat->message("Відповідь від офіційного сайту з тривогами не було отримано. 😔 \n\nСпробуйте трішки пізніше.")->send();
-
-                          break;
-                      } else {
-                          $attempts++;
+                        Log::info(alertStatus(), (array)JSON_UNESCAPED_UNICODE);
+                        if (!empty(alertStatus())) {
+                            messageAlertStatus($data, $this->chat);
                         }
 
+                        if ($attempts >= 5){
+                            $this->chat->message("Відповідь від офіційного сайту з тривогами не було отримано. 😔 \n\nСпробуйте трішки пізніше.")->send();
+                            break;
+                        }
+                          $attempts++;
                     }
 
                 }else{
@@ -189,8 +185,9 @@ class Handler extends WebhookHandler
                 $this->chat->message("Графік чергування вчителів та класів по Новогалещинському ліцею на І семестр 2024/2025 н.р.:")
                     ->keyboard(
                         Keyboard::make()->buttons([
-                            Button::make('📋 Поточний тиждень')->action('scheduleDuty')->param('type', 'week'),
-                            Button::make('📋 Весь семестр')->action('scheduleDuty')->param('type', 'all'),])
+                            Button::make('📌 Сьогодні/Завтра')->action('scheduleDuty')->param('type', 'tomorrow'),
+                            Button::make('📅 Поточний тиждень')->action('scheduleDuty')->param('type', 'week'),
+                            Button::make('📋 Семестр')->action('scheduleDuty')->param('type', 'all'),])
                     )->send();
 
                 break;
@@ -206,7 +203,7 @@ class Handler extends WebhookHandler
         $this->chat->message('<strong>'.$data['schedule']['title'].'</strong>')->send();
 
         foreach ($data['schedule'][$period] as $typeStudents){
-            $message = '<strong>🔵 '.$typeStudents['title'].' 🔵</strong>'. "\n".
+            $message = '<strong>👨‍🏫 '.$typeStudents['title'].' 👩‍🏫</strong>'. "\n".
                 "<blockquote>".$typeStudents['classes']."</blockquote>";
 
             $currentMonthIndex = 0;
@@ -280,83 +277,126 @@ class Handler extends WebhookHandler
      */
     public function scheduleDuty(): void
     {
-        $type = $this->data->get('type');
+        date_default_timezone_set('UTC');
 
+        $type = $this->data->get('type');
         $data = json_decode(Storage::get('\public\data\schedule_duty.json'), true);
 
-        // Поточна дата і дата через 7 днів
-
-
-// Функція для перевірки, чи дата в межах наступного тижня
-        function isWithinNextWeek($date): bool
+        // Функція для перевірки, чи дата в межах наступного тижня
+        function getCorrectDate($date, $type): bool
         {
+            // Поточна дата і дата через 7 днів
             $currentDate = new DateTime();
-            $endDate = (clone $currentDate)->modify('+7 days');
             $checkDate = DateTime::createFromFormat('d.m', $date);
+            $endDate = '';
+
+            if ($type == 'week'){
+                $endDate = (clone $currentDate)->modify('+7 days');
+            }
+            if ($type == 'tomorrow') {
+                $endDate = (clone $currentDate)->modify('+1 day');
+            }
 
             if($checkDate){
                 $checkDate->setDate($currentDate->format("Y"), $checkDate->format('m'), $checkDate->format('d'));
 
-                return $checkDate >= $currentDate && $checkDate <= $endDate;
-
+                return $checkDate >= $currentDate->setTime(0, 0, 0) && $checkDate <= $endDate;
             }
 
             return false;
-
         }
 
-        Log::info(isWithinNextWeek("06.10"), (array)JSON_UNESCAPED_UNICODE);
+        function getDuty($array, $chat): void
+        {
+            foreach ($array as $duty) {
+                $message = "<blockquote><strong>🗓 Дата: " . implode(", ", $duty['dates']) . "</strong></blockquote>\n\n";
+                $message .= "💼 Старший черговий: <strong>" . $duty['seniorDuty'] . "</strong>\n";
+                $message .= "🎓 Черговий клас: <strong>" . $duty['class'] . "</strong>\n\n";
+                $message .= "1️⃣ поверх: <strong>". implode(", ", $duty['firstFloor']) . "</strong>\n";
+                $message .= "2️⃣ поверх: <strong>" . implode(", ", $duty['secondFloor']) . "</strong>\n";
+                $message .= "3️⃣ поверх: <strong>" . implode(", ", $duty['thirdFloor']) . "</strong>\n";
+                $message .= "🏡 Подвір'я: <strong>" . $duty['yard'] . "</strong>\n";
 
-// Виведення інформації для наступного тижня
-        if ($type == 'week'){
-            $message = '';
-            $filteredDates = [];
+                $chat->message($message)->send();
+            }
+        }
 
-            foreach ($data['dutySchedule'] as $duty) {
+        switch($type){
+            case 'tomorrow':
+                $groupedDuties = [];
+                $foundTomorrow = 0;
 
-                foreach ($duty['dates'] as $date) {
-                    if (isWithinNextWeek($date)) {
-                        $filteredDates[] = $date;
+                foreach ($data['dutySchedule'] as $duty) {
+                    foreach ($duty['dates'] as $date) {
+                        if ($foundTomorrow < 2) {
+                            if (getCorrectDate($date, $type)) {
+                                $groupedDuties[] = [
+                                    'dates' => [$date],
+                                    'class' => $duty['class'],
+                                    'seniorDuty' => $duty['seniorDuty'],
+                                    'firstFloor' => $duty['firstFloor'],
+                                    'secondFloor' => $duty['secondFloor'],
+                                    'thirdFloor' => $duty['thirdFloor'],
+                                    'yard' => $duty['yard']
+                                ];
 
-                        $message .= "Клас: " . $duty['class'] . "\n";
-                        $message .= "Старший черговий: " . $duty['seniorDuty'] . "\n";
-                        $message .= "Чергові на 1 поверсі: " . implode(", ", $duty['firstFloor']) . "\n";
-                        $message .= "Чергові на 2 поверсі: " . implode(", ", $duty['secondFloor']) . "\n";
-                        $message .= "Чергові на 3 поверсі: " . implode(", ", $duty['thirdFloor']) . "\n";
-                        $message .= "Черговий по подвір'ю: " . $duty['yard'] . "\n";
-                        $message .= "----------------------\n";
+                                $foundTomorrow++;
+                            }
+                        }
                     }
                 }
+                getDuty($groupedDuties, $this->chat);
 
-              # $filteredDates = array_filter($duty['dates'], 'isWithinNextWeek');
+                break;
+            case 'week':
+            $groupedDuties = [];
+            // Виведення інформації для наступного тижня
+            foreach ($data['dutySchedule'] as $duty) {
+                $filteredDates = [];
 
-/*                if (!empty($filteredDates)) {
-                    $message .= "Дати чергування: " . implode(", ", $filteredDates) . "\n";
-                    foreach ($filteredDates as $date) {
-                        $message .= "Клас: " . $duty['class'] . "\n";
-                        $message .= "Старший черговий: " . $duty['seniorDuty'] . "\n";
-                        $message .= "Чергові на 1 поверсі: " . implode(", ", $duty['firstFloor']) . "\n";
-                        $message .= "Чергові на 2 поверсі: " . implode(", ", $duty['secondFloor']) . "\n";
-                        $message .= "Чергові на 3 поверсі: " . implode(", ", $duty['thirdFloor']) . "\n";
-                        $message .= "Черговий по подвір'ю: " . $duty['yard'] . "\n";
-                        $message .= "----------------------\n";
+                // Перевіряємо кожну дату
+                foreach ($duty['dates'] as $date) {
+                    if (getCorrectDate($date, $type)) {
+                        $filteredDates[] = $date;
                     }
-                }*/
+                }
+                // Групуємо дати за унікальним набором чергових
+                if (!empty($filteredDates)) {
+                    $key = md5(serialize([
+                        'class' => $duty['class'],
+                        'seniorDuty' => $duty['seniorDuty'],
+                        'firstFloor' => $duty['firstFloor'],
+                        'secondFloor' => $duty['secondFloor'],
+                        'thirdFloor' => $duty['thirdFloor'],
+                        'yard' => $duty['yard']
+                    ]));
+
+                    // Додаємо дати до відповідної групи
+                    if (!isset($groupedDuties[$key])) {
+                        $groupedDuties[$key] = [
+                            'dates' => [],
+                            'class' => $duty['class'],
+                            'seniorDuty' => $duty['seniorDuty'],
+                            'firstFloor' => $duty['firstFloor'],
+                            'secondFloor' => $duty['secondFloor'],
+                            'thirdFloor' => $duty['thirdFloor'],
+                            'yard' => $duty['yard']
+                        ];
+                    }
+                    $groupedDuties[$key]['dates'] = array_merge($groupedDuties[$key]['dates'], $filteredDates);
+                }
             }
-            Log::info($filteredDates, (array)JSON_UNESCAPED_UNICODE);
 
-            $this->chat->message($message)
-                ->keyboard(
-                    Keyboard::make()->buttons([
-                        Button::make('↩️ Повернутися')->action('schedule')->param('type', 'duty')
-                    ])
-                )->send();
+            // Виведення згрупованої інформації
+                getDuty($groupedDuties, $this->chat);
+                break;
+
+            case 'all':
+                // Виведення всієї інформації
+                getDuty($data['dutySchedule'], $this->chat);
+                break;
         }
-
-
     }
-
-
 
     public function status(): void
     {
