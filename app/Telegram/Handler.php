@@ -11,10 +11,19 @@
 
 namespace App\Telegram;
 
+use App\Models\Role;
+use App\Models\SchoolClass;
+use App\Models\Student;
+use App\Models\Teacher;
+use App\Models\User;
+use App\Models\UserTG;
 use DateTime;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
 use DefStudio\Telegraph\Keyboard\Keyboard;
+use DefStudio\Telegraph\Models\TelegraphChat;
+use DefStudio\Telegraph\Telegraph;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -22,7 +31,7 @@ use Stringable;
 
 class Handler extends WebhookHandler
 {
-    public function start():void
+    public function start(): void
     {
         $user_name = $this->message->from()->firstName();
 
@@ -33,50 +42,211 @@ class Handler extends WebhookHandler
         $this->chat->message("Оберіть, будь ласка, свій статус користувача!")
             ->keyboard(
                 Keyboard::make()->buttons([
-                    Button::make('📚 Учень')->action('status')->param('status', 'pupil'),
-                    Button::make('🎓 Учитель')->action('status')->param('status', 'teacher'),
-                    Button::make('💼 Адміністрація')->action('admin'),
-                    Button::make('👨‍👩‍👧‍👦 Батьки')->action('family'),
+                    Button::make('📚 Учень')->action('login')->param('status', 'student'),
+                    Button::make('🎓 Учитель')->action('login')->param('status', 'teacher'),
+                    Button::make('💼 Адміністрація')->action('login')->param('status', 'admin'),
+                    Button::make('👨‍👩‍👧‍👦 Батьки')->action('login')->param('status', 'family'),
+                    Button::make('🕵🏻‍♀️ Гість')->action('login')->param('status', 'guest'),
                 ])
             )->send();
     }
 
-    public function menu(): void
+    public function login(): void
     {
-        $menu = array(
-            'students' => array(
-                '📚 Розклад уроків' => 'lessons',
-                '📋 Графік навчання' => 'study',
-                '🍽 Меню' => 'dinner',
-                '⚠️ Статус тривоги' => 'alert',
-                '🚌 Розклад руху автобусів' => 'bus'
-            ),
-            'teachers' => array(
-                '👤 Чергування' => 'duty',
-            ),
-        );
+        $status = $this->data->get('status');
+        $ex = '';
 
-        $test = 'teachers';
-        $buttons = [];
-        foreach ($menu as $status => $types) {
-            foreach ($types as $type => $subtype) {
-                $buttons[] = Button::make($type)->action('schedule')->param('type', $subtype);
+        if ($status == 'student' || $status == 'teacher' || $status == 'admin') {
+            $cmd = '/user';
+
+            if ($status == 'student') {
+                $ex = '/user pupil007 s8kP7LTbvt';
             }
-            if ($test == 'pupil'){
-                break;
+            if ($status == 'teacher') {
+                $ex = '/user cool.teacher 9U18YXUbyivgQ990Zf7d';
+            }
+            if ($status == 'admin') {
+                $cmd = '/admin';
+                $ex = '/admin the.best.admin 9U18YXUbyivgQ990Zf7d';
+            }
+
+            $this->chat->message("Напиши команду $cmd та через пробіли першу частину корпоративної електронної адреси (до символа @) і особистий токен-ключ\n\nНаприклад: $ex")
+                ->send();
+        } else {
+            $this->userAuth("", "", "", $status, $this->chat);
+        }
+    }
+
+    public function userAuth($db = '', $email = '', $token = '', $status, $chat)
+    {
+        function createUser($user = '', $status, $chat): void
+        {
+            $roles = [
+                'student' => 1,
+                'teacher' => 2,
+                'admin' => 3,
+                'family' => 4,
+                'guest' => 5
+            ];
+
+            if ($status == "student" || $status == 'teacher' || $status == 'admin') {
+                $field = $status . '_id';
+
+                DB::table('users_tg')
+                    ->insert([
+                        'user_role' => $roles[$status],
+                        $field => $user->id,
+                        'chat_id' => $chat->chat_id,
+                        'chat_name' => $chat->name,
+                    ]);
+
+                DB::table($status . "s")
+                    ->where('email', $user->email)
+                    ->update([
+                        'is_verified' => true
+                    ]);
+            } else {
+                DB::table('users_tg')
+                    ->insert([
+                        'user_role' => $roles[$status],
+                        'chat_id' => $chat->chat_id,
+                        'chat_name' => $chat->name,
+                    ]);
+            }
+
+            $currentRole = DB::table('roles')->where('id', $roles[$status])->first();
+            $chat->message("Вам було встановлено роль <strong>" . $currentRole->role_name . "</strong>\n\nВикористайте команду /menu, щоб переглянути доступні вам можливості")->send();
+        }
+
+        if (DB::table('users_tg')->where('chat_id', $chat->chat_id)->exists()) {
+            $chat->message("Ви вже зареєстровані в системі")->send();
+        } else {
+            if ($status == 'student' || $status == 'teacher' || $status == 'admin') {
+                $user = DB::table($db)
+                    ->where('email', "$email")
+                    ->first();
+                if ($user) {
+                    if ($user->token == $token) {
+                        createUser($user, $status, $this->chat);
+                    } else {
+                        $chat->message("Помилка в токені")->send();
+                    }
+                } else {
+                    $chat->message("Помилка в email")->send();
+                }
+            } else {
+                createUser("", $status, $this->chat);
             }
         }
 
-        $this->chat->message("Яку актуальну інформацію бажаєш отримати?")
-            ->keyboard(Keyboard::make()->buttons($buttons))->send();
+        return false;
+    }
+
+    public function user($data): void
+    {
+        /*        Log::info(json_encode($data, JSON_UNESCAPED_UNICODE));*/
+        $data = explode(" ", $data);
+        if (count($data) == 2) {
+            $email = mb_strtolower($data[0]) . "@galeshchynalitsey.ukr.education";
+            $token = $data[1];
+
+            if (str_contains($email, 'pupil')) {
+                $db = 'students';
+                $status = 'student';
+            } else {
+                $db = 'teachers';
+                $status = 'teacher';
+            }
+
+            $this->userAuth($db, $email, $token, $status, $this->chat);
+        } else {
+            $this->chat->message("Ви не вказали додаткову інформацію (пошту/токен)")
+                ->send();
+        }
+    }
+
+    public function admin($data): void
+    {
+        $data = explode(" ", $data);
+        if (count($data) == 2) {
+            $email = mb_strtolower($data[0]) . "@galeshchynalitsey.ukr.education";
+            $token = $data[1];
+
+            $this->userAuth('admins', $email, $token, "admin", $this->chat);
+        } else {
+            $this->chat->message("Ви не вказали додаткову інформацію (пошту/токен)")
+                ->send();
+        }
+    }
+
+    public function menu(): void
+    {
+        if (UserTG::where('chat_id', $this->chat->chat_id)->exists()) {
+            $user = UserTG::where('chat_id', $this->chat->chat_id)->first();
+            $role = $user->role->role_name;
+
+            $student = array(
+                'Учень' => array(
+                    '📚 Розклад уроків' => 'lessons',
+                    '📋 Графік навчання' => 'study',
+                    '🍽 Меню' => 'dinner',
+                    '⚠️ Статус тривоги' => 'alert',
+                    '🚌 Розклад руху автобусів' => 'bus',
+                    '👤 Чергування' => 'duty',
+                )
+            );
+            $teacher = array(
+                'Вчитель' => array(
+                    '⚙️ Команди Вчителя' => 'settings',
+                )
+            );
+
+            $admin = array(
+                'Адміністрація' => array(
+                    '⚙️ Команди Адміністратора' => 'settings',
+                )
+            );
+
+            $menu = [];
+            if ($role == 'Учень' || $role == 'Вчитель' || $role == 'Адміністрація') {
+                $menu[] = $student;
+
+                if ($role == 'Вчитель') {
+                    $menu[] = $teacher;
+                }
+                if ($role == 'Адміністрація') {
+                    $menu[] = $teacher;
+                    $menu[] = $admin;
+                }
+            }
+
+            # Log::info(json_encode($menu, JSON_UNESCAPED_UNICODE));
+
+            $buttons = [];
+            foreach ($menu as $roles) {
+                foreach ($roles as $role => $types) {
+                    foreach ($types as $type => $command) {
+                        $buttons[] = Button::make($type)->action('command')->param('type', $command);
+                    }
+                }
+            }
+            $role == 'Адміністрація'?$buttons[] = Button::make('🌐 Увійти на сайті')->url("https://www.google.com/"):"";
+
+            $this->chat->message("Яку актуальну інформацію бажаєш отримати?")
+                ->keyboard(Keyboard::make()->buttons($buttons))->send();
+        } else {
+            $this->chat->message("Перед тим, як дізнатися якусь інформацію, мені потрібно знати твою роль")->send();
+        }
     }
 
     /**
      * @throws RandomException
      */
-    public function schedule():void
+    public function command(): void
     {
         $schedule = $this->data->get('type');
+        $user = UserTG::where('chat_id', $this->chat->chat_id)->first();
+        $role = $user->role->role_name;
 
         switch ($schedule) {
             case 'lessons':
@@ -104,7 +274,7 @@ class Handler extends WebhookHandler
                             Button::make('📍 №2 (Школа - Заруддя - Ревівка)')->action('scheduleBus')->param('route', '2'),
                             Button::make('📍 №3 (Школа - Трудовик - Горбані)')->action('scheduleBus')->param('route', '3'),
                             Button::make('📍 №4 (Школа - Геологія - Геологічна)')->action('scheduleBus')->param('route', '4'),
-                            Button::make('📍 №5 (Школа - Машзавод)')->action('scheduleBus')->param('route', '5')                        ])
+                            Button::make('📍 №5 (Школа - Машзавод)')->action('scheduleBus')->param('route', '5')])
                     )->send();
 
                 break;
@@ -146,21 +316,22 @@ class Handler extends WebhookHandler
 
                     Log::info($data, (array)JSON_UNESCAPED_UNICODE);
 
-                    if (!empty($data[0]['activeAlerts'])){
+                    if (!empty($data[0]['activeAlerts'])) {
                         $chat->message("❗<strong>В Полтавській області зараз повітряна тривога.\n\nЗалишайся в безпечному місці! </strong>❗️")
                             ->send();
                     } else {
                         $chat->message('🟢 <strong>Повітряної тривоги в Полтавській області немає</strong> 🟢')
-                            ->animation($gifsDeactivateAlert[rand(0, count($gifsDeactivateAlert)-1)])
+                            ->animation($gifsDeactivateAlert[rand(0, count($gifsDeactivateAlert) - 1)])
                             ->send();
                     }
                 }
+
                 $data = alertStatus();
 
-                if(empty($data) OR $data == ''){
+                if (empty($data) or $data == '') {
                     $attempts = 0;
 
-                    while(empty(alertStatus())) {
+                    while (empty(alertStatus())) {
                         $this->chat->message("Статус тривоги в області не вдалося визначити. 😔 \n\nАвтоматичний повторний запит через 5 секунд...⏳")->send();
                         sleep(5);
                         alertStatus();
@@ -169,17 +340,17 @@ class Handler extends WebhookHandler
                             messageAlertStatus($data, $this->chat);
                         }
 
-                        if ($attempts >= 5){
+                        if ($attempts >= 5) {
                             $this->chat->message("Відповідь від офіційного сайту з тривогами не було отримано. 😔 \n\nСпробуйте трішки пізніше.")->send();
                             break;
                         }
-                          $attempts++;
+                        $attempts++;
                     }
 
-                }else{
+                } else {
                     messageAlertStatus($data, $this->chat);
                 }
-            break;
+                break;
 
             case 'duty':
                 $this->chat->message("Графік чергування вчителів та класів по Новогалещинському ліцею на І семестр 2024/2025 н.р.:")
@@ -192,6 +363,26 @@ class Handler extends WebhookHandler
 
                 break;
 
+            case 'settings':
+                $commands = array(
+                    'Вчитель' => array(
+                        '/send_message [повідомлення] - надіслати повідомлення для всіх учнів свого класу'
+                    ),
+                    'Адміністрація' => array(
+                        '/send_message [учням/вчителям/всім] [повідомлення] - надіслати повідомлення',
+                        '/feedback_reports [кількість останніх/за замов. всі] - переглянути скарги, пропозиції, ідеї',
+                        "/add_teacher [ім'я] [прізвище] [пошта] [токен] [предмет] [класний керівник?] – додати вчителя",
+                    )
+                );
+                $message = '';
+                foreach ($commands[$role] as $command) {
+                    $message.= $command."\n";
+                }
+
+                $this->chat->message($message)->send();
+
+                break;
+
         }
     }
 
@@ -200,11 +391,11 @@ class Handler extends WebhookHandler
         $period = $this->data->get('period');
 
         $data = json_decode(Storage::get('\public\data\schedule_study.json'), true);
-        $this->chat->message('<strong>'.$data['schedule']['title'].'</strong>')->send();
+        $this->chat->message('<strong>' . $data['schedule']['title'] . '</strong>')->send();
 
-        foreach ($data['schedule'][$period] as $typeStudents){
-            $message = '<strong>👨‍🏫 '.$typeStudents['title'].' 👩‍🏫</strong>'. "\n".
-                "<blockquote>".$typeStudents['classes']."</blockquote>";
+        foreach ($data['schedule'][$period] as $typeStudents) {
+            $message = '<strong>👨‍🏫 ' . $typeStudents['title'] . ' 👩‍🏫</strong>' . "\n" .
+                "<blockquote>" . $typeStudents['classes'] . "</blockquote>";
 
             $currentMonthIndex = 0;
             if (is_array($typeStudents['date'])) {
@@ -212,29 +403,29 @@ class Handler extends WebhookHandler
 
                 foreach ($typeStudents['date'] as $dates) {
                     if ($currentMonthIndex == $currentMonth) {
-                        $message.= "\n\n<blockquote>";
-                        $message.= "<strong>".current($dates)."</strong>";
-                    }else{
-                        $message.= "\n\n<strong>".current($dates)."</strong>";
+                        $message .= "\n\n<blockquote>";
+                        $message .= "<strong>" . current($dates) . "</strong>";
+                    } else {
+                        $message .= "\n\n<strong>" . current($dates) . "</strong>";
                     }
 
-                    for($i  = 1; $i < count($dates); $i++) {
+                    for ($i = 1; $i < count($dates); $i++) {
                         if ($dates[$i] == date("d.m", strtotime("+1 day"))) {
-                            $message.= '<strong>'.$dates[$i].' (завтра)</strong> , ';
-                        } elseif ($dates[$i] == last($dates)){
-                            $message.= $dates[$i]. ";";
-                        } else{
-                            $message.= $dates[$i]. ', ';
+                            $message .= '<strong>' . $dates[$i] . ' (завтра)</strong> , ';
+                        } elseif ($dates[$i] == last($dates)) {
+                            $message .= $dates[$i] . ";";
+                        } else {
+                            $message .= $dates[$i] . ', ';
                         }
                     }
 
                     if ($currentMonthIndex == $currentMonth) {
-                        $message.= "</blockquote>";
+                        $message .= "</blockquote>";
                     }
                     $currentMonthIndex++;
                 }
                 $this->chat->message($message)->send();
-            } else{
+            } else {
                 $this->chat->message($typeStudents['date'])->send();
 
                 break;
@@ -249,8 +440,8 @@ class Handler extends WebhookHandler
 
         $data = json_decode(Storage::get('\public\data\schedule_bus.json'), true);
 
-        $route = $data['routes'][$route-1];
-        $message  = "<blockquote><strong>📍🗺️ Маршрут №" . $route['routeNumber'] . "</strong></blockquote>\n";
+        $route = $data['routes'][$route - 1];
+        $message = "<blockquote><strong>📍🗺️ Маршрут №" . $route['routeNumber'] . "</strong></blockquote>\n";
         $message .= "<strong>🚌 Модель автобуса: </strong>" . $route['busModel'] . "\n";
         $message .= "<strong>⭐ Номер: </strong>" . $route['registrationNumber'] . "\n";
         $message .= "<strong>😎 Водій: </strong>" . $route['driver'] . "\n\n";
@@ -262,7 +453,7 @@ class Handler extends WebhookHandler
             $message .= "<strong>🟢 Час прибуття: </strong>" . ($stop['arrivalTime'] ?? '—') . "\n";
             $message .= "<strong>🔴 Час відправлення: </strong>" . ($stop['departureTime'] ?? '—') . "\n";
             $message .= "<strong>⏳ Тривалість зупинки (хв): </strong>" . ($stop['stopDurationMinutes'] ?? '—') . "\n\n";
-         }
+        }
 
         $this->chat->message($message)
             ->keyboard(
@@ -290,14 +481,14 @@ class Handler extends WebhookHandler
             $checkDate = DateTime::createFromFormat('d.m', $date);
             $endDate = '';
 
-            if ($type == 'week'){
+            if ($type == 'week') {
                 $endDate = (clone $currentDate)->modify('+7 days');
             }
             if ($type == 'tomorrow') {
                 $endDate = (clone $currentDate)->modify('+1 day');
             }
 
-            if($checkDate){
+            if ($checkDate) {
                 $checkDate->setDate($currentDate->format("Y"), $checkDate->format('m'), $checkDate->format('d'));
 
                 return $checkDate >= $currentDate->setTime(0, 0, 0) && $checkDate <= $endDate;
@@ -312,7 +503,7 @@ class Handler extends WebhookHandler
                 $message = "<blockquote><strong>🗓 Дата: " . implode(", ", $duty['dates']) . "</strong></blockquote>\n\n";
                 $message .= "💼 Старший черговий: <strong>" . $duty['seniorDuty'] . "</strong>\n";
                 $message .= "🎓 Черговий клас: <strong>" . $duty['class'] . "</strong>\n\n";
-                $message .= "1️⃣ поверх: <strong>". implode(", ", $duty['firstFloor']) . "</strong>\n";
+                $message .= "1️⃣ поверх: <strong>" . implode(", ", $duty['firstFloor']) . "</strong>\n";
                 $message .= "2️⃣ поверх: <strong>" . implode(", ", $duty['secondFloor']) . "</strong>\n";
                 $message .= "3️⃣ поверх: <strong>" . implode(", ", $duty['thirdFloor']) . "</strong>\n";
                 $message .= "🏡 Подвір'я: <strong>" . $duty['yard'] . "</strong>\n";
@@ -321,7 +512,7 @@ class Handler extends WebhookHandler
             }
         }
 
-        switch($type){
+        switch ($type) {
             case 'tomorrow':
                 $groupedDuties = [];
                 $foundTomorrow = 0;
@@ -349,45 +540,45 @@ class Handler extends WebhookHandler
 
                 break;
             case 'week':
-            $groupedDuties = [];
-            // Виведення інформації для наступного тижня
-            foreach ($data['dutySchedule'] as $duty) {
-                $filteredDates = [];
+                $groupedDuties = [];
+                // Виведення інформації для наступного тижня
+                foreach ($data['dutySchedule'] as $duty) {
+                    $filteredDates = [];
 
-                // Перевіряємо кожну дату
-                foreach ($duty['dates'] as $date) {
-                    if (getCorrectDate($date, $type)) {
-                        $filteredDates[] = $date;
+                    // Перевіряємо кожну дату
+                    foreach ($duty['dates'] as $date) {
+                        if (getCorrectDate($date, $type)) {
+                            $filteredDates[] = $date;
+                        }
                     }
-                }
-                // Групуємо дати за унікальним набором чергових
-                if (!empty($filteredDates)) {
-                    $key = md5(serialize([
-                        'class' => $duty['class'],
-                        'seniorDuty' => $duty['seniorDuty'],
-                        'firstFloor' => $duty['firstFloor'],
-                        'secondFloor' => $duty['secondFloor'],
-                        'thirdFloor' => $duty['thirdFloor'],
-                        'yard' => $duty['yard']
-                    ]));
-
-                    // Додаємо дати до відповідної групи
-                    if (!isset($groupedDuties[$key])) {
-                        $groupedDuties[$key] = [
-                            'dates' => [],
+                    // Групуємо дати за унікальним набором чергових
+                    if (!empty($filteredDates)) {
+                        $key = md5(serialize([
                             'class' => $duty['class'],
                             'seniorDuty' => $duty['seniorDuty'],
                             'firstFloor' => $duty['firstFloor'],
                             'secondFloor' => $duty['secondFloor'],
                             'thirdFloor' => $duty['thirdFloor'],
                             'yard' => $duty['yard']
-                        ];
-                    }
-                    $groupedDuties[$key]['dates'] = array_merge($groupedDuties[$key]['dates'], $filteredDates);
-                }
-            }
+                        ]));
 
-            // Виведення згрупованої інформації
+                        // Додаємо дати до відповідної групи
+                        if (!isset($groupedDuties[$key])) {
+                            $groupedDuties[$key] = [
+                                'dates' => [],
+                                'class' => $duty['class'],
+                                'seniorDuty' => $duty['seniorDuty'],
+                                'firstFloor' => $duty['firstFloor'],
+                                'secondFloor' => $duty['secondFloor'],
+                                'thirdFloor' => $duty['thirdFloor'],
+                                'yard' => $duty['yard']
+                            ];
+                        }
+                        $groupedDuties[$key]['dates'] = array_merge($groupedDuties[$key]['dates'], $filteredDates);
+                    }
+                }
+
+                // Виведення згрупованої інформації
                 getDuty($groupedDuties, $this->chat);
                 break;
 
@@ -398,50 +589,14 @@ class Handler extends WebhookHandler
         }
     }
 
-    public function status(): void
-    {
-        $status = $this->data->get('status');
-
-        if ($status == 'pupil'){
-            $this->chat->message("Напиши свою учнівську електронну адресу, щоб я розумів, з ким спілкуюсь")->send();
-        }
-        if ($status == 'teacher'){
-            $this->chat->message("Напишіть свою корпоративну електронну адресу, щоб я розумів, з ким спілкуюсь")->send();
-        }
-    }
-
     public function handleChatMessage(Stringable|\Illuminate\Support\Stringable $text): void
     {
-        switch (true) {
-            case str_contains($text, 'pupil') AND str_contains($text, '@galeshchynalitsey.ukr.education'):
-                $this->login($text,'pupil');
-                break;
-            case str_contains($text, '@galeshchynalitsey.ukr.education'):
-                $this->login('teacher');
-                break;
-            case str_contains($text, '@gmail.com'):
-                $this->chat->message("Я працюю лише зі шкільною електронною адресою")->send();
-                break;
-        }
+        $this->chat->message("Спілкуватися я можу лише за допомогою команд. Використовуй це :)")->send();
     }
 
-    public function login($text, $status): void
+    public function handleUnknownCommand(Stringable|\Illuminate\Support\Stringable $text): void
     {
-        switch ($status) {
-            case 'pupil':
-                if ($text == 'pupil34@galeshchynalitsey.ukr.education'){
-                    $this->chat->message("Доступ отримано")->send();
-                }else{
-                    $this->chat->message("Вашу ел.адресу не знайдено. Спробуйте ще раз!")->send();
-                }
-                break;
-            case 'teacher':
-                $this->chat->message("Учитель")->send();
-                break;
-            case 'personal':
-                $this->chat->message("Особиста")->send();
-                break;
-        }
+        $this->chat->message("Такої команди я не знаю")->send();
     }
 
 }

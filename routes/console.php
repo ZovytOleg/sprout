@@ -1,5 +1,6 @@
 <?php
 
+use DefStudio\Telegraph\Models\TelegraphBot;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -19,8 +20,9 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('base', function () {
-    /** @var \DefStudio\Telegraph\Models\TelegraphBot $sprout */
-    $sprout = \DefStudio\Telegraph\Models\TelegraphBot::find(1);
+    /** @var TelegraphBot $sprout */
+    $sprout = TelegraphBot::find(1);
+    $sprout->registerWebhook()->send();
 
     $sprout->registerCommands([
         'menu' => 'Головне меню',
