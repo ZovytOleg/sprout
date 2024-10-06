@@ -7,11 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-class UserTG extends Model
+class Follower extends Model
 {
     use HasFactory;
-
-    protected $table = 'users_tg';
 
     public function role(): belongsTo
     {

@@ -12,11 +12,11 @@
 namespace App\Telegram;
 
 use App\Models\Role;
-use App\Models\SchoolClass;
+use App\Models\Grade;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\User;
-use App\Models\UserTG;
+use App\Models\Follower;
 use DateTime;
 use DefStudio\Telegraph\Handlers\WebhookHandler;
 use DefStudio\Telegraph\Keyboard\Button;
@@ -92,7 +92,7 @@ class Handler extends WebhookHandler
             if ($status == "student" || $status == 'teacher' || $status == 'admin') {
                 $field = $status . '_id';
 
-                DB::table('users_tg')
+                DB::table('followers')
                     ->insert([
                         'user_role' => $roles[$status],
                         $field => $user->id,
@@ -106,7 +106,7 @@ class Handler extends WebhookHandler
                         'is_verified' => true
                     ]);
             } else {
-                DB::table('users_tg')
+                DB::table('followers')
                     ->insert([
                         'user_role' => $roles[$status],
                         'chat_id' => $chat->chat_id,
@@ -118,7 +118,7 @@ class Handler extends WebhookHandler
             $chat->message("Вам було встановлено роль <strong>" . $currentRole->role_name . "</strong>\n\nВикористайте команду /menu, щоб переглянути доступні вам можливості")->send();
         }
 
-        if (DB::table('users_tg')->where('chat_id', $chat->chat_id)->exists()) {
+        if (DB::table('followers')->where('chat_id', $chat->chat_id)->exists()) {
             $chat->message("Ви вже зареєстровані в системі")->send();
         } else {
             if ($status == 'student' || $status == 'teacher' || $status == 'admin') {
@@ -181,8 +181,8 @@ class Handler extends WebhookHandler
 
     public function menu(): void
     {
-        if (UserTG::where('chat_id', $this->chat->chat_id)->exists()) {
-            $user = UserTG::where('chat_id', $this->chat->chat_id)->first();
+        if (Follower::where('chat_id', $this->chat->chat_id)->exists()) {
+            $user = Follower::where('chat_id', $this->chat->chat_id)->first();
             $role = $user->role->role_name;
 
             $student = array(
@@ -245,7 +245,7 @@ class Handler extends WebhookHandler
     public function command(): void
     {
         $schedule = $this->data->get('type');
-        $user = UserTG::where('chat_id', $this->chat->chat_id)->first();
+        $user = Follower::where('chat_id', $this->chat->chat_id)->first();
         $role = $user->role->role_name;
 
         switch ($schedule) {

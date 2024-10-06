@@ -2,14 +2,12 @@
 
 namespace App\Models;
 
-use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use \Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Student extends Model
 {
-    use CrudTrait;
     use HasFactory;
     protected $fillable = [
         'first_name',
@@ -23,8 +21,9 @@ class Student extends Model
 
     protected $table = 'students';
     protected $primaryKey = 'id';
-    public function tokenTG(): HasOne
-    {
-        return $this->hasOne(Token::class);
-    }
+
+    public function grade(): BelongsTo
+   {
+       return $this->belongsTo(Grade::class);
+   }
 }
