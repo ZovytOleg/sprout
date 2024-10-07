@@ -15,6 +15,7 @@ use MoonShine\Decorations\Grid;
 use MoonShine\Fields\Email;
 use MoonShine\Fields\Relationships\BelongsTo;
 use MoonShine\Fields\Relationships\HasOne;
+use MoonShine\Fields\Switcher;
 use MoonShine\Fields\Text;
 use MoonShine\Fields\TinyMce;
 use MoonShine\Resources\ModelResource;
@@ -62,12 +63,13 @@ class StudentResource extends ModelResource
                     Block::make('Додаткове',[
                         Email::make("Пошта", 'email')->showOnExport(),
                         BelongsTo::make('Клас', 'grade', resource: new GradeResource())->showOnExport(),
+                        Switcher::make("Активований", 'is_verified')
+                            ->disabled()
                     ]),
                  #   TinyMce::make('Опис', 'description'),
                 ])->columnSpan(4),
 
             ]),
-
         ];
     }
 
@@ -76,7 +78,8 @@ class StudentResource extends ModelResource
 
         return [
             Text::make('Прізвище', 'last_name'),
-            BelongsTo::make('Клас', 'grade', resource: new GradeResource())
+            BelongsTo::make('Клас', 'grade', resource: new GradeResource()),
+            Switcher::make("Активований", 'is_verified')
         ];
     }
 

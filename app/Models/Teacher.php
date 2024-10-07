@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Teacher extends Model
@@ -15,14 +16,17 @@ class Teacher extends Model
         'last_name',
         'email',
         'subject',
-        'class_leader'
+        'grade_id'
     ];
     protected $hidden = [
         'token_id',
     ];
 
-    public function tokenTG(): HasOne
+    protected $table = 'teachers';
+    protected $primaryKey = 'id';
+
+    public function grade(): BelongsTo
     {
-        return $this->hasOne(Token::class);
+        return $this->belongsTo(Grade::class);
     }
 }

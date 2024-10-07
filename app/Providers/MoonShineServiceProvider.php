@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Models\Follower;
+use App\Models\Student;
+use App\Models\Teacher;
 use App\MoonShine\Resources\FollowerResource;
 use App\MoonShine\Resources\PostResource;
 use App\MoonShine\Resources\StudentResource;
@@ -63,6 +66,7 @@ class MoonShineServiceProvider extends MoonShineApplicationServiceProvider
                     ->icon('heroicons.academic-cap'),
                 MenuItem::make(
                     static fn() => __('Фоловери'), new FollowerResource())
+                    ->badge(fn() => Follower::query()->count())
                     ->icon('heroicons.paper-airplane'),
             ])->icon('heroicons.user-group'),
         ];

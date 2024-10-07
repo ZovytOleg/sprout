@@ -11,8 +11,27 @@ class Follower extends Model
 {
     use HasFactory;
 
-    public function role(): belongsTo
+    public function roles(): belongsTo
     {
         return $this->belongsTo(Role::class, 'user_role');
+    }
+
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class);
+    }
+
+    public function teacher(): BelongsTo
+    {
+        return $this->belongsTo(Teacher::class);
+    }
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class);
+    }
+
+    public function admin(): BelongsTo
+    {
+        return $this->belongsTo(Admin::class);
     }
 }

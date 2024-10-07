@@ -94,7 +94,7 @@ class Handler extends WebhookHandler
 
                 DB::table('followers')
                     ->insert([
-                        'user_role' => $roles[$status],
+                        'role_id' => $roles[$status],
                         $field => $user->id,
                         'chat_id' => $chat->chat_id,
                         'chat_name' => $chat->name,
@@ -108,14 +108,14 @@ class Handler extends WebhookHandler
             } else {
                 DB::table('followers')
                     ->insert([
-                        'user_role' => $roles[$status],
+                        'role_id' => $roles[$status],
                         'chat_id' => $chat->chat_id,
                         'chat_name' => $chat->name,
                     ]);
             }
 
             $currentRole = DB::table('roles')->where('id', $roles[$status])->first();
-            $chat->message("Вам було встановлено роль <strong>" . $currentRole->role_name . "</strong>\n\nВикористайте команду /menu, щоб переглянути доступні вам можливості")->send();
+            $chat->message("Вам було встановлено роль <strong>" . $currentRole->title . "</strong>\n\nВикористайте команду /menu, щоб переглянути доступні вам можливості")->send();
         }
 
         if (DB::table('followers')->where('chat_id', $chat->chat_id)->exists()) {
@@ -183,7 +183,7 @@ class Handler extends WebhookHandler
     {
         if (Follower::where('chat_id', $this->chat->chat_id)->exists()) {
             $user = Follower::where('chat_id', $this->chat->chat_id)->first();
-            $role = $user->role->role_name;
+            $role = $user->role->title;
 
             $student = array(
                 'Учень' => array(
@@ -246,7 +246,7 @@ class Handler extends WebhookHandler
     {
         $schedule = $this->data->get('type');
         $user = Follower::where('chat_id', $this->chat->chat_id)->first();
-        $role = $user->role->role_name;
+        $role = $user->role->title;
 
         switch ($schedule) {
             case 'lessons':
