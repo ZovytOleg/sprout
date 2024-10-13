@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\MoonShine\Resources;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Grade;
+use App\Models\Subject;
 
+use MoonShine\Fields\Relationships\BelongsTo;
 use MoonShine\Fields\Text;
 use MoonShine\Resources\ModelResource;
 use MoonShine\Decorations\Block;
@@ -15,15 +16,15 @@ use MoonShine\Fields\Field;
 use MoonShine\Components\MoonShineComponent;
 
 /**
- * @extends ModelResource<Grade>
+ * @extends ModelResource<Subject>
  */
-class GradeResource extends ModelResource
+class SubjectResource extends ModelResource
 {
-    protected string $model = Grade::class;
+    protected string $model = Subject::class;
 
-    protected string $title = 'Класи';
+    protected string $title = 'Предмети';
 
-    protected string $column = 'name';
+    protected string $column = 'title';
 
     /**
      * @return list<MoonShineComponent|Field>
@@ -33,13 +34,14 @@ class GradeResource extends ModelResource
         return [
             Block::make([
                 ID::make()->sortable(),
-                TEXT::make('name')->sortable(),
+                TEXT::make("Назва", 'title'),
+                BelongsTo::make('Вчитель', 'teacher', fn($teacher) => $teacher -> last_name . " " . $teacher -> first_name)
             ]),
         ];
     }
 
     /**
-     * @param Grade $item
+     * @param Subject $item
      *
      * @return array<string, string[]|string>
      * @see https://laravel.com/docs/validation#available-validation-rules

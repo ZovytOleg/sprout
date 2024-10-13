@@ -1,5 +1,6 @@
 <?php
 
+use App\MoonShine\Controllers\ScheduleLessonsController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,3 +16,5 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('/tester', ScheduleLessonsController::class)->name('ScheduleLessons');

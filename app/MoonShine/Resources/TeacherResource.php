@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\MoonShine\Resources;
 
+use App\Models\Subject;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Teacher;
@@ -12,10 +13,15 @@ use Illuminate\Validation\Rules\In;
 use MoonShine\Components\Layout\Flash;
 use MoonShine\Decorations\Column;
 use MoonShine\Decorations\Grid;
+use MoonShine\Fields\Date;
 use MoonShine\Fields\Email;
+use MoonShine\Fields\Json;
 use MoonShine\Fields\Number;
 use MoonShine\Fields\Relationships\BelongsTo;
+use MoonShine\Fields\Relationships\HasMany;
+use MoonShine\Fields\Relationships\HasOne;
 use MoonShine\Fields\Switcher;
+use MoonShine\Fields\Td;
 use MoonShine\Fields\Text;
 use MoonShine\Resources\ModelResource;
 use MoonShine\Decorations\Block;
@@ -32,10 +38,11 @@ class TeacherResource extends ModelResource
 
     protected string $title = 'Вчителі';
 
-    protected string $column = 'first_name';
+    protected string $column = 'last_name';
 
     /**
      * @return list<MoonShineComponent|Field>
+     * @throws \Throwable
      */
     public function fields(): array
     {
@@ -48,21 +55,32 @@ class TeacherResource extends ModelResource
 
             Grid::make([
                 Column::make([
-                    Block::make('Основне',[
+                    Block::make('Основна інформація', [
                         TEXT::make("Прізвище", 'last_name')->sortable()->showOnExport(),
                         TEXT::make("Ім'я", 'first_name')->sortable()->showOnExport(),
                         Email::make("Пошта", 'email')->showOnExport(),
+                        /*                        HasMany::make('Предмети', 'subjects', resource: new SubjectResource())
+                                                    ->fields([
+                                                        Text::make('', "title"),
+                                                    ])
+                                                    ->showOnExport()*/
                     ])
                 ])->columnSpan(8),
 
                 Column::make([
-                    Block::make('Додаткове',[
-                        TEXT::make("Предмет", 'subject')->showOnExport(),
+                    Block::make('Додаткова інформація', [
+                        Json::make('Предмети', 'subjectss')
+                            ->asRelation(new SubjectResource())
+                            ->fields([
+                            BelongsTo::make('', 'subject', resource: new TeacherResource())
+                                ->setColumn('teacher_id')
+                        ]),
+
                         BelongsTo::make('Класний керівник', 'grade', resource: new GradeResource())
                             ->showOnExport()
-                            ->default('-')
                             ->nullable(),
-                        Switcher::make("Активований", 'is_verified')
+                        Switcher::make("Статус", 'is_verified')
+                            ->hint('Активований акаунт')
                             ->disabled()
                     ]),
                     #   TinyMce::make('Опис', 'description'),

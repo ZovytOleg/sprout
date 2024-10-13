@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Student;
 
+use Illuminate\Testing\Fluent\Concerns\Has;
 use MoonShine\Components\CardsBuilder;
 use MoonShine\Decorations\Column;
 use MoonShine\Decorations\Grid;
@@ -33,7 +34,7 @@ class StudentResource extends ModelResource
 
     protected string $title = 'Учні';
 
-    protected string $column = 'first_name';
+    protected string $column = 'last_name';
     protected bool $isAsync = false; // без перезагрузки
 
     protected int $itemsPerPage = 50;
@@ -63,7 +64,8 @@ class StudentResource extends ModelResource
                     Block::make('Додаткове',[
                         Email::make("Пошта", 'email')->showOnExport(),
                         BelongsTo::make('Клас', 'grade', resource: new GradeResource())->showOnExport(),
-                        Switcher::make("Активований", 'is_verified')
+                        Switcher::make("Статус", 'is_verified')
+                            ->hint('Активований акаунт')
                             ->disabled()
                     ]),
                  #   TinyMce::make('Опис', 'description'),

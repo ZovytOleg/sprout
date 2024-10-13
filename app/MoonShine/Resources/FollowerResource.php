@@ -44,7 +44,7 @@ class FollowerResource extends ModelResource
                 ->showOnExport(),
             Block::make('Основне', [
                 BelongsTo::make('Роль', 'role', resource: new RoleResource())
-                    ->badge(fn($role_id, Field $field) => $role_id === 5? 'success' : 'gray')
+                    ->badge(fn($role) => $role->id == 1? 'info' : ($role->id == 2? 'success' : ($role->id == 3? 'error': ($role->id == 4? 'warning': 'gray'))) )
                     ->showOnExport(),
                 BelongsTo::make("Ім'я", 'teacher', 'first_name', resource: new RoleResource())
                     ->showOnExport()
